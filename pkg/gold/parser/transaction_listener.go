@@ -47,9 +47,6 @@ type TransactionListener interface {
 	// EnterAmount is called when entering the Amount production.
 	EnterAmount(c *AmountContext)
 
-	// EnterShareDescWhatever is called when entering the ShareDescWhatever production.
-	EnterShareDescWhatever(c *ShareDescWhateverContext)
-
 	// EnterShareIntOfInt is called when entering the ShareIntOfInt production.
 	EnterShareIntOfInt(c *ShareIntOfIntContext)
 
@@ -62,11 +59,11 @@ type TransactionListener interface {
 	// EnterAccount is called when entering the account production.
 	EnterAccount(c *AccountContext)
 
+	// EnterRate is called when entering the rate production.
+	EnterRate(c *RateContext)
+
 	// EnterFrom is called when entering the from production.
 	EnterFrom(c *FromContext)
-
-	// EnterSend is called when entering the send production.
-	EnterSend(c *SendContext)
 
 	// EnterSource is called when entering the source production.
 	EnterSource(c *SourceContext)
@@ -76,6 +73,9 @@ type TransactionListener interface {
 
 	// EnterDistribute is called when entering the distribute production.
 	EnterDistribute(c *DistributeContext)
+
+	// EnterSend is called when entering the send production.
+	EnterSend(c *SendContext)
 
 	// ExitTransaction is called when exiting the transaction production.
 	ExitTransaction(c *TransactionContext)
@@ -116,9 +116,6 @@ type TransactionListener interface {
 	// ExitAmount is called when exiting the Amount production.
 	ExitAmount(c *AmountContext)
 
-	// ExitShareDescWhatever is called when exiting the ShareDescWhatever production.
-	ExitShareDescWhatever(c *ShareDescWhateverContext)
-
 	// ExitShareIntOfInt is called when exiting the ShareIntOfInt production.
 	ExitShareIntOfInt(c *ShareIntOfIntContext)
 
@@ -131,11 +128,11 @@ type TransactionListener interface {
 	// ExitAccount is called when exiting the account production.
 	ExitAccount(c *AccountContext)
 
+	// ExitRate is called when exiting the rate production.
+	ExitRate(c *RateContext)
+
 	// ExitFrom is called when exiting the from production.
 	ExitFrom(c *FromContext)
-
-	// ExitSend is called when exiting the send production.
-	ExitSend(c *SendContext)
 
 	// ExitSource is called when exiting the source production.
 	ExitSource(c *SourceContext)
@@ -145,4 +142,7 @@ type TransactionListener interface {
 
 	// ExitDistribute is called when exiting the distribute production.
 	ExitDistribute(c *DistributeContext)
+
+	// ExitSend is called when exiting the send production.
+	ExitSend(c *SendContext)
 }

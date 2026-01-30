@@ -1,0 +1,11 @@
+-- lint:ignore-file (legacy migration already applied)
+BEGIN;
+
+ALTER TABLE balance
+  ALTER COLUMN available TYPE DECIMAL USING (available / POWER(10, scale::INTEGER))::DECIMAL,
+  ALTER COLUMN on_hold TYPE DECIMAL USING on_hold::DECIMAL;
+
+COMMIT;
+
+ALTER TABLE balance
+    DROP COLUMN IF EXISTS scale;

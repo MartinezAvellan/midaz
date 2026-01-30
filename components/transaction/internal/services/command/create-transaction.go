@@ -5,54 +5,55 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/LerianStudio/midaz/components/transaction/internal/adapters/mongodb"
-	"github.com/LerianStudio/midaz/components/transaction/internal/adapters/postgres/transaction"
-	"github.com/LerianStudio/midaz/pkg"
-	"github.com/LerianStudio/midaz/pkg/constant"
-	goldModel "github.com/LerianStudio/midaz/pkg/gold/transaction/model"
-	"github.com/LerianStudio/midaz/pkg/mopentelemetry"
-
+	libCommons "github.com/LerianStudio/lib-commons/v2/commons"
+	libOpentelemetry "github.com/LerianStudio/lib-commons/v2/commons/opentelemetry"
+	"github.com/LerianStudio/midaz/v3/components/transaction/internal/adapters/mongodb"
+	"github.com/LerianStudio/midaz/v3/components/transaction/internal/adapters/postgres/transaction"
+	"github.com/LerianStudio/midaz/v3/pkg/constant"
+	pkgTransaction "github.com/LerianStudio/midaz/v3/pkg/transaction"
 	"github.com/google/uuid"
 )
 
 // CreateTransaction creates a new transaction persisting data in the repository.
-func (uc *UseCase) CreateTransaction(ctx context.Context, organizationID, ledgerID uuid.UUID, t *goldModel.Transaction) (*transaction.Transaction, error) {
-	logger := pkg.NewLoggerFromContext(ctx)
-	tracer := pkg.NewTracerFromContext(ctx)
+func (uc *UseCase) CreateTransaction(ctx context.Context, organizationID, ledgerID, transactionID uuid.UUID, t *pkgTransaction.Transaction) (*transaction.Transaction, error) {
+	logger, tracer, _, _ := libCommons.NewTrackingFromContext(ctx)
 
 	ctx, span := tracer.Start(ctx, "command.create_transaction")
 	defer span.End()
 
 	logger.Infof("Trying to create new transaction")
 
-	description := constant.CREATED
+	description := constant.APPROVED
 	status := transaction.Status{
 		Code:        description,
 		Description: &description,
 	}
 
-	amount := float64(t.Send.Value)
-	scale := float64(t.Send.Scale)
+	var parentTransactionID *string
+
+	if transactionID != uuid.Nil {
+		value := transactionID.String()
+		parentTransactionID = &value
+	}
 
 	save := &transaction.Transaction{
-		ID:                       pkg.GenerateUUIDv7().String(),
-		ParentTransactionID:      nil,
+		ID:                       libCommons.GenerateUUIDv7().String(),
+		ParentTransactionID:      parentTransactionID,
 		OrganizationID:           organizationID.String(),
 		LedgerID:                 ledgerID.String(),
 		Description:              t.Description,
-		Template:                 t.ChartOfAccountsGroupName,
 		Status:                   status,
-		Amount:                   &amount,
-		AmountScale:              &scale,
+		Amount:                   &t.Send.Value,
 		AssetCode:                t.Send.Asset,
 		ChartOfAccountsGroupName: t.ChartOfAccountsGroupName,
+		Body:                     *t,
 		CreatedAt:                time.Now(),
 		UpdatedAt:                time.Now(),
 	}
 
 	tran, err := uc.TransactionRepo.Create(ctx, save)
 	if err != nil {
-		mopentelemetry.HandleSpanError(&span, "Failed to create transaction on repo", err)
+		libOpentelemetry.HandleSpanBusinessErrorEvent(&span, "Failed to create transaction on repo", err)
 
 		logger.Errorf("Error creating t: %v", err)
 
@@ -60,12 +61,6 @@ func (uc *UseCase) CreateTransaction(ctx context.Context, organizationID, ledger
 	}
 
 	if t.Metadata != nil {
-		if err := pkg.CheckMetadataKeyAndValueLength(100, t.Metadata); err != nil {
-			mopentelemetry.HandleSpanError(&span, "Failed to check metadata key and value length", err)
-
-			return nil, err
-		}
-
 		meta := mongodb.Metadata{
 			EntityID:   tran.ID,
 			EntityName: reflect.TypeOf(transaction.Transaction{}).Name(),
@@ -75,7 +70,7 @@ func (uc *UseCase) CreateTransaction(ctx context.Context, organizationID, ledger
 		}
 
 		if err := uc.MetadataRepo.Create(ctx, reflect.TypeOf(transaction.Transaction{}).Name(), &meta); err != nil {
-			mopentelemetry.HandleSpanError(&span, "Failed to create transaction metadata", err)
+			libOpentelemetry.HandleSpanBusinessErrorEvent(&span, "Failed to create transaction metadata", err)
 
 			logger.Errorf("Error into creating transactiont metadata: %v", err)
 

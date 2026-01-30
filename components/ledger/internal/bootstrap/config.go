@@ -3,236 +3,182 @@ package bootstrap
 import (
 	"fmt"
 
-	grpcin "github.com/LerianStudio/midaz/components/ledger/internal/adapters/grpc/in"
-	httpin "github.com/LerianStudio/midaz/components/ledger/internal/adapters/http/in"
-	"github.com/LerianStudio/midaz/components/ledger/internal/adapters/mongodb"
-	"github.com/LerianStudio/midaz/components/ledger/internal/adapters/postgres/account"
-	"github.com/LerianStudio/midaz/components/ledger/internal/adapters/postgres/asset"
-	"github.com/LerianStudio/midaz/components/ledger/internal/adapters/postgres/ledger"
-	"github.com/LerianStudio/midaz/components/ledger/internal/adapters/postgres/organization"
-	"github.com/LerianStudio/midaz/components/ledger/internal/adapters/postgres/portfolio"
-	"github.com/LerianStudio/midaz/components/ledger/internal/adapters/postgres/product"
-	"github.com/LerianStudio/midaz/components/ledger/internal/adapters/rabbitmq"
-	"github.com/LerianStudio/midaz/components/ledger/internal/adapters/redis"
-	"github.com/LerianStudio/midaz/components/ledger/internal/services/command"
-	"github.com/LerianStudio/midaz/components/ledger/internal/services/query"
-	"github.com/LerianStudio/midaz/pkg"
-	"github.com/LerianStudio/midaz/pkg/mcasdoor"
-	"github.com/LerianStudio/midaz/pkg/mmongo"
-	"github.com/LerianStudio/midaz/pkg/mopentelemetry"
-	"github.com/LerianStudio/midaz/pkg/mpostgres"
-	"github.com/LerianStudio/midaz/pkg/mrabbitmq"
-	"github.com/LerianStudio/midaz/pkg/mredis"
-	"github.com/LerianStudio/midaz/pkg/mzap"
+	"github.com/LerianStudio/lib-auth/v2/auth/middleware"
+	libCommons "github.com/LerianStudio/lib-commons/v2/commons"
+	libLog "github.com/LerianStudio/lib-commons/v2/commons/log"
+	libOpentelemetry "github.com/LerianStudio/lib-commons/v2/commons/opentelemetry"
+	libZap "github.com/LerianStudio/lib-commons/v2/commons/zap"
+	httpin "github.com/LerianStudio/midaz/v3/components/ledger/internal/adapters/http/in"
+	"github.com/LerianStudio/midaz/v3/components/onboarding"
+	"github.com/LerianStudio/midaz/v3/components/transaction"
+	"github.com/google/uuid"
 )
 
 const ApplicationName = "ledger"
 
-// Config is the top level configuration struct for the entire application.
+// Config is the top level configuration struct for the unified ledger component.
 type Config struct {
-	EnvName                 string `env:"ENV_NAME"`
-	LogLevel                string `env:"LOG_LEVEL"`
-	ServerAddress           string `env:"SERVER_ADDRESS"`
-	ProtoAddress            string `env:"PROTO_ADDRESS"`
-	PrimaryDBHost           string `env:"DB_HOST"`
-	PrimaryDBUser           string `env:"DB_USER"`
-	PrimaryDBPassword       string `env:"DB_PASSWORD"`
-	PrimaryDBName           string `env:"DB_NAME"`
-	PrimaryDBPort           string `env:"DB_PORT"`
-	ReplicaDBHost           string `env:"DB_REPLICA_HOST"`
-	ReplicaDBUser           string `env:"DB_REPLICA_USER"`
-	ReplicaDBPassword       string `env:"DB_REPLICA_PASSWORD"`
-	ReplicaDBName           string `env:"DB_REPLICA_NAME"`
-	ReplicaDBPort           string `env:"DB_REPLICA_PORT"`
-	MongoDBHost             string `env:"MONGO_HOST"`
-	MongoDBName             string `env:"MONGO_NAME"`
-	MongoDBUser             string `env:"MONGO_USER"`
-	MongoDBPassword         string `env:"MONGO_PASSWORD"`
-	MongoDBPort             string `env:"MONGO_PORT"`
-	CasdoorAddress          string `env:"CASDOOR_ADDRESS"`
-	CasdoorClientID         string `env:"CASDOOR_CLIENT_ID"`
-	CasdoorClientSecret     string `env:"CASDOOR_CLIENT_SECRET"`
-	CasdoorOrganizationName string `env:"CASDOOR_ORGANIZATION_NAME"`
-	CasdoorApplicationName  string `env:"CASDOOR_APPLICATION_NAME"`
-	CasdoorModelName        string `env:"CASDOOR_MODEL_NAME"`
-	JWKAddress              string `env:"CASDOOR_JWK_ADDRESS"`
-	RabbitMQHost            string `env:"RABBITMQ_HOST"`
-	RabbitMQPortHost        string `env:"RABBITMQ_PORT_HOST"`
-	RabbitMQPortAMQP        string `env:"RABBITMQ_PORT_AMPQ"`
-	RabbitMQUser            string `env:"RABBITMQ_DEFAULT_USER"`
-	RabbitMQPass            string `env:"RABBITMQ_DEFAULT_PASS"`
-	RabbitMQExchange        string `env:"RABBITMQ_EXCHANGE"`
-	RabbitMQKey             string `env:"RABBITMQ_KEY"`
-	RabbitMQQueue           string `env:"RABBITMQ_QUEUE"`
+	EnvName  string `env:"ENV_NAME"`
+	LogLevel string `env:"LOG_LEVEL"`
+	Version  string `env:"VERSION"`
+
+	// Server configuration - unified port for all APIs
+	ServerAddress string `env:"SERVER_ADDRESS" envDefault:":3002"`
+
+	// OpenTelemetry configuration
 	OtelServiceName         string `env:"OTEL_RESOURCE_SERVICE_NAME"`
 	OtelLibraryName         string `env:"OTEL_LIBRARY_NAME"`
 	OtelServiceVersion      string `env:"OTEL_RESOURCE_SERVICE_VERSION"`
 	OtelDeploymentEnv       string `env:"OTEL_RESOURCE_DEPLOYMENT_ENVIRONMENT"`
 	OtelColExporterEndpoint string `env:"OTEL_EXPORTER_OTLP_ENDPOINT"`
-	RedisHost               string `env:"REDIS_HOST"`
-	RedisPort               string `env:"REDIS_PORT"`
-	RedisUser               string `env:"REDIS_USER"`
-	RedisPassword           string `env:"REDIS_PASSWORD"`
+	EnableTelemetry         bool   `env:"ENABLE_TELEMETRY"`
+
+	// Auth configuration
+	AuthEnabled bool   `env:"PLUGIN_AUTH_ENABLED"`
+	AuthHost    string `env:"PLUGIN_AUTH_HOST"`
 }
 
-// InitServers initiate http and grpc servers.
-func InitServers() *Service {
+// Options contains optional dependencies that can be injected by callers.
+type Options struct {
+	// Logger allows callers to provide a pre-configured logger, avoiding multiple
+	// initializations when composing components (e.g. unified ledger).
+	Logger libLog.Logger
+}
+
+// InitServers initializes the unified ledger service that composes
+// both onboarding and transaction modules in a single process.
+// The transaction module is initialized first so its BalancePort (the UseCase)
+// can be passed directly to onboarding for in-process calls.
+func InitServers() (*Service, error) {
+	return InitServersWithOptions(nil)
+}
+
+// InitServersWithOptions initializes the unified ledger service with optional dependency injection.
+func InitServersWithOptions(opts *Options) (*Service, error) {
 	cfg := &Config{}
 
-	if err := pkg.SetConfigFromEnvVars(cfg); err != nil {
-		panic(err)
+	if err := libCommons.SetConfigFromEnvVars(cfg); err != nil {
+		return nil, fmt.Errorf("failed to load config from environment variables: %w", err)
 	}
 
-	logger := mzap.InitializeLogger()
+	var baseLogger libLog.Logger
+	if opts != nil && opts.Logger != nil {
+		baseLogger = opts.Logger
+	} else {
+		baseLogger = libZap.InitializeLogger()
+	}
 
-	telemetry := &mopentelemetry.Telemetry{
+	telemetry := libOpentelemetry.InitializeTelemetry(&libOpentelemetry.TelemetryConfig{
 		LibraryName:               cfg.OtelLibraryName,
 		ServiceName:               cfg.OtelServiceName,
 		ServiceVersion:            cfg.OtelServiceVersion,
 		DeploymentEnv:             cfg.OtelDeploymentEnv,
 		CollectorExporterEndpoint: cfg.OtelColExporterEndpoint,
+		EnableTelemetry:           cfg.EnableTelemetry,
+		Logger:                    baseLogger,
+	})
+
+	// Generate startup ID for tracing initialization issues
+	startupID := uuid.New().String()
+
+	ledgerLogger := baseLogger.WithFields(
+		"component", "ledger",
+		"startup_id", startupID,
+	)
+	transactionLogger := baseLogger.WithFields(
+		"component", "transaction",
+		"startup_id", startupID,
+	)
+	onboardingLogger := baseLogger.WithFields(
+		"component", "onboarding",
+		"startup_id", startupID,
+	)
+
+	ledgerLogger.WithFields(
+		"version", cfg.Version,
+		"env", cfg.EnvName,
+	).Info("Starting unified ledger component")
+
+	ledgerLogger.Info("Initializing transaction module...")
+
+	// Initialize transaction module first to get the BalancePort
+	transactionService, err := transaction.InitServiceWithOptionsOrError(&transaction.Options{
+		Logger: transactionLogger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize transaction module: %w", err)
 	}
 
-	casDoorConnection := &mcasdoor.CasdoorConnection{
-		JWKUri:           cfg.JWKAddress,
-		Endpoint:         cfg.CasdoorAddress,
-		ClientID:         cfg.CasdoorClientID,
-		ClientSecret:     cfg.CasdoorClientSecret,
-		OrganizationName: cfg.CasdoorOrganizationName,
-		ApplicationName:  cfg.CasdoorApplicationName,
-		ModelName:        cfg.CasdoorModelName,
-		Logger:           logger,
+	// Get the BalancePort from transaction for in-process communication
+	// This is the transaction.UseCase itself which implements BalancePort directly
+	balancePort := transactionService.GetBalancePort()
+
+	// Get the metadata port from transaction for metadata index operations
+	transactionMetadataRepo := transactionService.GetMetadataIndexPort()
+	if transactionMetadataRepo == nil {
+		return nil, fmt.Errorf("failed to get MetadataIndexPort from transaction module")
 	}
 
-	postgreSourcePrimary := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-		cfg.PrimaryDBHost, cfg.PrimaryDBUser, cfg.PrimaryDBPassword, cfg.PrimaryDBName, cfg.PrimaryDBPort)
+	ledgerLogger.Info("Transaction module initialized, BalancePort and MetadataIndexPort available for in-process calls")
 
-	postgreSourceReplica := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-		cfg.ReplicaDBHost, cfg.ReplicaDBUser, cfg.ReplicaDBPassword, cfg.ReplicaDBName, cfg.ReplicaDBPort)
+	ledgerLogger.Info("Initializing onboarding module in UNIFIED MODE...")
 
-	postgresConnection := &mpostgres.PostgresConnection{
-		ConnectionStringPrimary: postgreSourcePrimary,
-		ConnectionStringReplica: postgreSourceReplica,
-		PrimaryDBName:           cfg.PrimaryDBName,
-		ReplicaDBName:           cfg.ReplicaDBName,
-		Component:               ApplicationName,
-		Logger:                  logger,
+	// Initialize onboarding module in unified mode with the BalancePort for direct calls
+	// No intermediate adapter needed - the transaction.UseCase is passed directly
+	onboardingService, err := onboarding.InitServiceWithOptionsOrError(&onboarding.Options{
+		Logger:      onboardingLogger,
+		UnifiedMode: true,
+		BalancePort: balancePort,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize onboarding module: %w", err)
 	}
 
-	mongoSource := fmt.Sprintf("mongodb://%s:%s@%s:%s",
-		cfg.MongoDBUser, cfg.MongoDBPassword, cfg.MongoDBHost, cfg.MongoDBPort)
+	ledgerLogger.Info("Onboarding module initialized")
 
-	mongoConnection := &mmongo.MongoConnection{
-		ConnectionStringSource: mongoSource,
-		Database:               cfg.MongoDBName,
-		Logger:                 logger,
+	// Get the metadata port from onboarding for metadata index operations
+	onboardingMetadataRepo := onboardingService.GetMetadataIndexPort()
+	if onboardingMetadataRepo == nil {
+		return nil, fmt.Errorf("failed to get MetadataIndexPort from onboarding module")
 	}
 
-	rabbitSource := fmt.Sprintf("amqp://%s:%s@%s:%s",
-		cfg.RabbitMQUser, cfg.RabbitMQPass, cfg.RabbitMQHost, cfg.RabbitMQPortHost)
+	ledgerLogger.Info("Both metadata index repositories available for settings routes")
 
-	rabbitMQConnection := &mrabbitmq.RabbitMQConnection{
-		ConnectionStringSource: rabbitSource,
-		Host:                   cfg.RabbitMQHost,
-		Port:                   cfg.RabbitMQPortAMQP,
-		User:                   cfg.RabbitMQUser,
-		Pass:                   cfg.RabbitMQPass,
-		Exchange:               cfg.RabbitMQExchange,
-		Key:                    cfg.RabbitMQKey,
-		Queue:                  cfg.RabbitMQQueue,
-		Logger:                 logger,
+	// Create auth client for metadata index routes
+	auth := middleware.NewAuthClient(cfg.AuthHost, cfg.AuthEnabled, &ledgerLogger)
+
+	// Create metadata index handler with both repositories
+	metadataIndexHandler := &httpin.MetadataIndexHandler{
+		OnboardingMetadataRepo:  onboardingMetadataRepo,
+		TransactionMetadataRepo: transactionMetadataRepo,
 	}
 
-	redisSource := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
+	// Create route registrar for ledger-specific routes (metadata indexes)
+	ledgerRouteRegistrar := httpin.CreateRouteRegistrar(auth, metadataIndexHandler)
 
-	redisConnection := &mredis.RedisConnection{
-		Addr:     redisSource,
-		User:     cfg.RedisUser,
-		Password: cfg.RedisPassword,
-		DB:       0,
-		Protocol: 3,
-		Logger:   logger,
-	}
+	ledgerLogger.Info("Creating unified HTTP server on " + cfg.ServerAddress)
 
-	organizationPostgreSQLRepository := organization.NewOrganizationPostgreSQLRepository(postgresConnection)
-	ledgerPostgreSQLRepository := ledger.NewLedgerPostgreSQLRepository(postgresConnection)
-	productPostgreSQLRepository := product.NewProductPostgreSQLRepository(postgresConnection)
-	portfolioPostgreSQLRepository := portfolio.NewPortfolioPostgreSQLRepository(postgresConnection)
-	accountPostgreSQLRepository := account.NewAccountPostgreSQLRepository(postgresConnection)
-	assetPostgreSQLRepository := asset.NewAssetPostgreSQLRepository(postgresConnection)
+	// Create the unified server that consolidates all routes on a single port
+	unifiedServer := NewUnifiedServer(
+		cfg.ServerAddress,
+		ledgerLogger,
+		telemetry,
+		onboardingService.GetRouteRegistrar(),
+		transactionService.GetRouteRegistrar(),
+		ledgerRouteRegistrar,
+	)
 
-	metadataMongoDBRepository := mongodb.NewMetadataMongoDBRepository(mongoConnection)
-
-	producerRabbitMQRepository := rabbitmq.NewProducerRabbitMQ(rabbitMQConnection)
-	consumerRabbitMQRepository := rabbitmq.NewConsumerRabbitMQ(rabbitMQConnection)
-
-	redisConsumerRepository := redis.NewConsumerRedis(redisConnection)
-
-	commandUseCase := &command.UseCase{
-		OrganizationRepo: organizationPostgreSQLRepository,
-		LedgerRepo:       ledgerPostgreSQLRepository,
-		ProductRepo:      productPostgreSQLRepository,
-		PortfolioRepo:    portfolioPostgreSQLRepository,
-		AccountRepo:      accountPostgreSQLRepository,
-		AssetRepo:        assetPostgreSQLRepository,
-		MetadataRepo:     metadataMongoDBRepository,
-		RabbitMQRepo:     producerRabbitMQRepository,
-		RedisRepo:        redisConsumerRepository,
-	}
-
-	queryUseCase := &query.UseCase{
-		OrganizationRepo: organizationPostgreSQLRepository,
-		LedgerRepo:       ledgerPostgreSQLRepository,
-		ProductRepo:      productPostgreSQLRepository,
-		PortfolioRepo:    portfolioPostgreSQLRepository,
-		AccountRepo:      accountPostgreSQLRepository,
-		AssetRepo:        assetPostgreSQLRepository,
-		MetadataRepo:     metadataMongoDBRepository,
-		RabbitMQRepo:     consumerRabbitMQRepository,
-		RedisRepo:        redisConsumerRepository,
-	}
-
-	accountHandler := &httpin.AccountHandler{
-		Command: commandUseCase,
-		Query:   queryUseCase,
-	}
-
-	portfolioHandler := &httpin.PortfolioHandler{
-		Command: commandUseCase,
-		Query:   queryUseCase,
-	}
-
-	ledgerHandler := &httpin.LedgerHandler{
-		Command: commandUseCase,
-		Query:   queryUseCase,
-	}
-
-	assetHandler := &httpin.AssetHandler{
-		Command: commandUseCase,
-		Query:   queryUseCase,
-	}
-
-	organizationHandler := &httpin.OrganizationHandler{
-		Command: commandUseCase,
-		Query:   queryUseCase,
-	}
-
-	productHandler := &httpin.ProductHandler{
-		Command: commandUseCase,
-		Query:   queryUseCase,
-	}
-
-	httpApp := httpin.NewRouter(logger, telemetry, casDoorConnection, accountHandler, portfolioHandler, ledgerHandler, assetHandler, organizationHandler, productHandler)
-
-	serverAPI := NewServer(cfg, httpApp, logger, telemetry)
-
-	grpcApp := grpcin.NewRouterGRPC(logger, telemetry, casDoorConnection, commandUseCase, queryUseCase)
-
-	serverGRPC := NewServerGRPC(cfg, grpcApp, logger, telemetry)
+	ledgerLogger.WithFields(
+		"version", cfg.Version,
+		"env", cfg.EnvName,
+		"server_address", cfg.ServerAddress,
+	).Info("Unified ledger component started successfully with single-port mode")
 
 	return &Service{
-		Server:     serverAPI,
-		ServerGRPC: serverGRPC,
-		Logger:     logger,
-	}
+		OnboardingService:  onboardingService,
+		TransactionService: transactionService,
+		UnifiedServer:      unifiedServer,
+		Logger:             ledgerLogger,
+		Telemetry:          telemetry,
+	}, nil
 }

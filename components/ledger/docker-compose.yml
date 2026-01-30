@@ -9,21 +9,17 @@ services:
       - .env
     ports:
       - ${SERVER_PORT}:${SERVER_PORT}
-      - ${PROTO_PORT}:${PROTO_PORT}
     volumes:
       - .:/usr/src/app
     networks:
-      - ledger_network
-      - auth_network
-      - infra_network
+      - infra-network
+      - ledger-network
 
 networks:
-  ledger_network:
-    name: ledger_network
+  infra-network:
+    name: infra-network
     driver: bridge
-  auth_network:
-    name: auth_network
-    driver: bridge
-  infra_network:
-    name: infra_network
+    external: true
+  ledger-network:
+    name: ledger-network
     driver: bridge

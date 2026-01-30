@@ -3,153 +3,354 @@ package mmodel
 import (
 	"time"
 
-	proto "github.com/LerianStudio/midaz/pkg/mgrpc/account"
+	"github.com/google/uuid"
 )
 
-// CreateAccountInput is a struct design to encapsulate request create payload data.
+// CreateAccountInput is a struct designed to encapsulate request create payload data.
 //
 // swagger:model CreateAccountInput
-// @Description CreateAccountInput is the input payload to create an account.
+//	@Description	Request payload for creating a new account within a ledger. Accounts represent individual financial entities such as bank accounts, credit cards, expense categories, or any other financial buckets within a ledger. Accounts are identified by a unique ID, can have aliases for easy reference, and are associated with a specific asset type.
+//
+//	@example		{
+//	  "name": "Corporate Checking Account",
+//	  "assetCode": "USD",
+//	  "status": {
+//	    "code": "ACTIVE"
+//	  },
+//	  "alias": "@treasury_checking",
+//	  "type": "deposit",
+//	  "metadata": {
+//	    "department": "Treasury",
+//	    "purpose": "Operating Expenses",
+//	    "region": "Global"
+//	  }
+//	}
 type CreateAccountInput struct {
-	AssetCode       string         `json:"assetCode" validate:"required,max=100" example:"BRL"`
-	Name            string         `json:"name" validate:"max=256" example:"My Account"`
-	Alias           *string        `json:"alias" validate:"max=100" example:"@person1"`
-	Type            string         `json:"type" validate:"required" example:"creditCard"`
-	ParentAccountID *string        `json:"parentAccountId" validate:"omitempty,uuid" example:"00000000-0000-0000-0000-000000000000"`
-	ProductID       *string        `json:"productId" validate:"omitempty,uuid" example:"00000000-0000-0000-0000-000000000000"`
-	PortfolioID     *string        `json:"portfolioId" validate:"omitempty,uuid" example:"00000000-0000-0000-0000-000000000000"`
-	EntityID        *string        `json:"entityId" validate:"omitempty,max=256" example:"00000000-0000-0000-0000-000000000000"`
-	Status          Status         `json:"status"`
-	AllowSending    *bool          `json:"allowSending" example:"true"`
-	AllowReceiving  *bool          `json:"allowReceiving" example:"true"`
-	Metadata        map[string]any `json:"metadata" validate:"dive,keys,keymax=100,endkeys,nonested,valuemax=2000"`
-} // @name CreateAccountInput
+	// Human-readable name of the account
+	// required: false
+	// example: Corporate Checking Account
+	// maxLength: 256
+	Name string `json:"name" validate:"max=256" example:"Corporate Checking Account" maxLength:"256"`
 
-// UpdateAccountInput is a struct design to encapsulate request update payload data.
+	// ID of the parent account if this is a subaccount (optional)
+	// required: false
+	// format: uuid
+	ParentAccountID *string `json:"parentAccountId" validate:"omitempty,uuid" format:"uuid"`
+
+	// Optional external identifier for linking to external systems
+	// required: false
+	// example: EXT-ACC-12345
+	// maxLength: 256
+	EntityID *string `json:"entityId" validate:"omitempty,max=256" example:"EXT-ACC-12345" maxLength:"256"`
+
+	// Asset code that this account will use for balances and transactions
+	// required: true
+	// example: USD
+	// maxLength: 100
+	AssetCode string `json:"assetCode" validate:"required,max=100" example:"USD" maxLength:"100"`
+
+	// ID of the portfolio this account belongs to (optional)
+	// required: false
+	// format: uuid
+	PortfolioID *string `json:"portfolioId" validate:"omitempty,uuid" format:"uuid"`
+
+	// ID of the segment this account belongs to (optional)
+	// required: false
+	// format: uuid
+	SegmentID *string `json:"segmentId" validate:"omitempty,uuid" format:"uuid"`
+
+	// Current operating status of the account
+	// required: false
+	Status Status `json:"status"`
+
+	// Unique alias for the account (optional, must follow alias format rules)
+	// required: false
+	// example: @treasury_checking
+	// maxLength: 100
+	Alias *string `json:"alias" validate:"omitempty,max=100,prohibitedexternalaccountprefix,invalidaliascharacters" example:"@treasury_checking" maxLength:"100"`
+
+	// Type of the account
+	// required: true
+	// example: deposit
+	// maxLength: 256
+	Type string `json:"type" validate:"required,max=256,invalidstrings=external" example:"deposit"`
+
+	// Whether the account should start blocked
+	// required: false
+	// default: false
+	Blocked *bool `json:"blocked"`
+
+	// Custom key-value pairs for extending the account information
+	// required: false
+	// example: {"department": "Treasury", "purpose": "Operating Expenses", "region": "Global"}
+	Metadata map[string]any `json:"metadata" validate:"dive,keys,keymax=100,endkeys,nonested,valuemax=2000"`
+} //	@name	CreateAccountInput
+
+// UpdateAccountInput is a struct designed to encapsulate request update payload data.
 //
 // swagger:model UpdateAccountInput
-// @Description UpdateAccountInput is the input payload to update an account.
+//	@Description	Request payload for updating an existing account. All fields are optional - only specified fields will be updated. Omitted fields will remain unchanged. This allows partial updates to account properties such as name, status, portfolio, segment, and metadata.
+//
+//	@example		{
+//	  "name": "Primary Corporate Checking Account",
+//	  "status": {
+//	    "code": "ACTIVE"
+//	  },
+//	  "metadata": {
+//	    "department": "Global Treasury",
+//	    "purpose": "Primary Operations",
+//	    "region": "Global"
+//	  }
+//	}
 type UpdateAccountInput struct {
-	Name           string         `json:"name" validate:"max=256" example:"My Account Updated"`
-	Status         Status         `json:"status"`
-	AllowSending   *bool          `json:"allowSending" example:"true"`
-	AllowReceiving *bool          `json:"allowReceiving" example:"true"`
-	Alias          *string        `json:"alias" validate:"max=100" example:"@person1"`
-	ProductID      *string        `json:"productId" validate:"uuid" example:"00000000-0000-0000-0000-000000000000"`
-	Metadata       map[string]any `json:"metadata" validate:"dive,keys,keymax=100,endkeys,nonested,valuemax=2000"`
-} // @name UpdateAccountInput
+	// Updated name of the account
+	// required: false
+	// example: Primary Corporate Checking Account
+	// maxLength: 256
+	Name string `json:"name" validate:"max=256" example:"Primary Corporate Checking Account" maxLength:"256"`
+
+	// Updated segment ID for the account
+	// required: false
+	// format: uuid
+	SegmentID *string `json:"segmentId" validate:"omitempty,uuid" format:"uuid"`
+
+	// Updated portfolio ID for the account
+	// required: false
+	// format: uuid
+	PortfolioID *string `json:"portfolioId" validate:"omitempty,uuid" format:"uuid"`
+
+	// Optional external identifier for linking to external systems
+	// required: false
+	// example: EXT-ACC-12345
+	// maxLength: 256
+	EntityID *string `json:"entityId" validate:"omitempty,max=256" example:"EXT-ACC-12345" maxLength:"256"`
+
+	// Updated status of the account
+	// required: false
+	Status Status `json:"status"`
+
+	// Whether the account should be blocked
+	// required: false
+	Blocked *bool `json:"blocked"`
+
+	// Updated custom key-value pairs for extending the account information
+	// required: false
+	// example: {"department": "Global Treasury", "purpose": "Primary Operations", "region": "Global"}
+	Metadata map[string]any `json:"metadata" validate:"dive,keys,keymax=100,endkeys,omitempty,nonested,valuemax=2000"`
+} //	@name	UpdateAccountInput
 
 // Account is a struct designed to encapsulate response payload data.
 //
 // swagger:model Account
-// @Description Account is a struct designed to store account data.
-type Account struct {
-	ID              string         `json:"id" example:"00000000-0000-0000-0000-000000000000"`
-	Name            string         `json:"name" example:"My Account"`
-	ParentAccountID *string        `json:"parentAccountId" example:"00000000-0000-0000-0000-000000000000"`
-	EntityID        *string        `json:"entityId" example:"00000000-0000-0000-0000-000000000000"`
-	AssetCode       string         `json:"assetCode" example:"BRL"`
-	OrganizationID  string         `json:"organizationId" example:"00000000-0000-0000-0000-000000000000"`
-	LedgerID        string         `json:"ledgerId" example:"00000000-0000-0000-0000-000000000000"`
-	PortfolioID     *string        `json:"portfolioId" example:"00000000-0000-0000-0000-000000000000"`
-	ProductID       *string        `json:"productId" example:"00000000-0000-0000-0000-000000000000"`
-	Balance         Balance        `json:"balance"`
-	Status          Status         `json:"status"`
-	AllowSending    *bool          `json:"allowSending" example:"true"`
-	AllowReceiving  *bool          `json:"allowReceiving" example:"true"`
-	Alias           *string        `json:"alias" example:"@person1"`
-	Type            string         `json:"type" example:"creditCard"`
-	CreatedAt       time.Time      `json:"createdAt" example:"2021-01-01T00:00:00Z"`
-	UpdatedAt       time.Time      `json:"updatedAt" example:"2021-01-01T00:00:00Z"`
-	DeletedAt       *time.Time     `json:"deletedAt" example:"2021-01-01T00:00:00Z"`
-	Metadata        map[string]any `json:"metadata,omitempty"`
-} // @name Account
-
-// Balance structure for marshaling/unmarshalling JSON.
+//	@Description	Complete account entity containing all fields including system-generated fields like ID, creation timestamps, and metadata. This is the response format for account operations. Accounts represent individual financial entities (bank accounts, cards, expense categories, etc.) within a ledger and are the primary structures for tracking balances and transactions.
 //
-// swagger:model Balance
-// @Description Balance is the struct designed to represent the account balance.
-type Balance struct {
-	Available *float64 `json:"available" example:"1500"`
-	OnHold    *float64 `json:"onHold" example:"500"`
-	Scale     *float64 `json:"scale" example:"2"`
-} // @name Balance
+//	@example		{
+//	  "id": "a1b2c3d4-e5f6-7890-abcd-1234567890ab",
+//	  "name": "Corporate Checking Account",
+//	  "assetCode": "USD",
+//	  "organizationId": "b2c3d4e5-f6a1-7890-bcde-2345678901cd",
+//	  "ledgerId": "c3d4e5f6-a1b2-7890-cdef-3456789012de",
+//	  "portfolioId": "d4e5f6a1-b2c3-7890-defg-4567890123ef",
+//	  "segmentId": "e5f6a1b2-c3d4-7890-efgh-5678901234fg",
+//	  "status": {
+//	    "code": "ACTIVE"
+//	  },
+//	  "alias": "@treasury_checking",
+//	  "type": "deposit",
+//	  "createdAt": "2022-04-15T09:30:00Z",
+//	  "updatedAt": "2022-04-15T09:30:00Z",
+//	  "metadata": {
+//	    "department": "Treasury",
+//	    "purpose": "Operating Expenses",
+//	    "region": "Global"
+//	  }
+//	}
+type Account struct {
+	// Unique identifier for the account (UUID format)
+	// example: 00000000-0000-0000-0000-000000000000
+	// format: uuid
+	ID string `json:"id" example:"00000000-0000-0000-0000-000000000000" format:"uuid"`
 
-// IsEmpty method that set empty or nil in fields
-func (b Balance) IsEmpty() bool {
-	return b.Available == nil && b.OnHold == nil && b.Scale == nil
+	// Human-readable name of the account
+	// example: Corporate Checking Account
+	// maxLength: 256
+	Name string `json:"name" example:"Corporate Checking Account" maxLength:"256"`
+
+	// ID of the parent account if this is a sub-account (UUID format)
+	// example: 00000000-0000-0000-0000-000000000000
+	// format: uuid
+	ParentAccountID *string `json:"parentAccountId" example:"00000000-0000-0000-0000-000000000000" format:"uuid"`
+
+	// Optional external identifier for linking to external systems
+	// example: EXT-ACC-12345
+	// maxLength: 256
+	EntityID *string `json:"entityId" example:"EXT-ACC-12345" maxLength:"256"`
+
+	// Asset code associated with this account (determines currency/asset type)
+	// example: USD
+	// maxLength: 100
+	AssetCode string `json:"assetCode" example:"USD" maxLength:"100"`
+
+	// ID of the organization that owns this account (UUID format)
+	// example: 00000000-0000-0000-0000-000000000000
+	// format: uuid
+	OrganizationID string `json:"organizationId" example:"00000000-0000-0000-0000-000000000000" format:"uuid"`
+
+	// ID of the ledger this account belongs to (UUID format)
+	// example: 00000000-0000-0000-0000-000000000000
+	// format: uuid
+	LedgerID string `json:"ledgerId" example:"00000000-0000-0000-0000-000000000000" format:"uuid"`
+
+	// ID of the portfolio this account belongs to (UUID format)
+	// example: 00000000-0000-0000-0000-000000000000
+	// format: uuid
+	PortfolioID *string `json:"portfolioId" example:"00000000-0000-0000-0000-000000000000" format:"uuid"`
+
+	// ID of the segment this account belongs to (UUID format)
+	// example: 00000000-0000-0000-0000-000000000000
+	// format: uuid
+	SegmentID *string `json:"segmentId" example:"00000000-0000-0000-0000-000000000000" format:"uuid"`
+
+	// Current operating status of the account
+	Status Status `json:"status"`
+
+	// Unique alias for the account (makes referencing easier)
+	// example: @treasury_checking
+	// maxLength: 100
+	Alias *string `json:"alias" example:"@treasury_checking" maxLength:"100"`
+
+	// Type of the account.
+	// example: deposit
+	Type string `json:"type" example:"deposit"`
+
+	// Indicates if the account is blocked
+	Blocked *bool `json:"blocked"`
+
+	// Timestamp when the account was created (RFC3339 format)
+	// example: 2021-01-01T00:00:00Z
+	// format: date-time
+	CreatedAt time.Time `json:"createdAt" example:"2021-01-01T00:00:00Z" format:"date-time"`
+
+	// Timestamp when the account was last updated (RFC3339 format)
+	// example: 2021-01-01T00:00:00Z
+	// format: date-time
+	UpdatedAt time.Time `json:"updatedAt" example:"2021-01-01T00:00:00Z" format:"date-time"`
+
+	// Timestamp when the account was soft deleted, null if not deleted (RFC3339 format)
+	// example: null
+	// format: date-time
+	DeletedAt *time.Time `json:"deletedAt" example:"2021-01-01T00:00:00Z" format:"date-time"`
+
+	// Custom key-value pairs for extending the account information
+	// example: {"department": "Treasury", "purpose": "Operating Expenses", "region": "Global"}
+	Metadata map[string]any `json:"metadata,omitempty"`
+} //	@name	Account
+
+// IDtoUUID converts the account's string ID to a UUID object
+//
+// Returns the UUID representation of the account's ID
+func (a *Account) IDtoUUID() uuid.UUID {
+	return uuid.MustParse(a.ID)
 }
 
-// Accounts struct to return get all.
+// Accounts struct to return a paginated list of accounts.
 //
 // swagger:model Accounts
-// @Description Accounts is the struct designed to return a list of accounts with pagination.
+//	@Description	Paginated list of accounts with metadata about the current page, limit, and the account items themselves. Used for list operations.
+//
+//	@example		{
+//	  "items": [
+//	    {
+//	      "id": "a1b2c3d4-e5f6-7890-abcd-1234567890ab",
+//	      "name": "Corporate Checking Account",
+//	      "assetCode": "USD",
+//	      "ledgerId": "c3d4e5f6-a1b2-7890-cdef-3456789012de",
+//	      "status": {
+//	        "code": "ACTIVE"
+//	      },
+//	      "alias": "@treasury_checking",
+//	      "type": "deposit",
+//	      "createdAt": "2022-04-15T09:30:00Z",
+//	      "updatedAt": "2022-04-15T09:30:00Z"
+//	    },
+//	    {
+//	      "id": "f6a1b2c3-d4e5-7890-fghi-6789012345gh",
+//	      "name": "Operating Expenses",
+//	      "assetCode": "USD",
+//	      "ledgerId": "c3d4e5f6-a1b2-7890-cdef-3456789012de",
+//	      "status": {
+//	        "code": "ACTIVE"
+//	      },
+//	      "alias": "@operating_expenses",
+//	      "type": "expense",
+//	      "createdAt": "2022-04-16T10:15:00Z",
+//	      "updatedAt": "2022-04-16T10:15:00Z"
+//	    }
+//	  ],
+//	  "page": 1,
+//	  "limit": 10
+//	}
 type Accounts struct {
+	// Array of account records returned in this page
+	// example: [{"id":"00000000-0000-0000-0000-000000000000","name":"Corporate Checking Account","assetCode":"USD","status":{"code": "ACTIVE"}}]
 	Items []Account `json:"items"`
-	Page  int       `json:"page" example:"1"`
-	Limit int       `json:"limit" example:"10"`
-} // @name Accounts
 
-// ToProto converts entity Account to a response protobuf proto
-func (e *Account) ToProto() *proto.Account {
-	status := proto.Status{
-		Code: e.Status.Code,
+	// Current page number in the pagination
+	// example: 1
+	// minimum: 1
+	Page int `json:"page" example:"1" minimum:"1"`
+
+	// Maximum number of items per page
+	// example: 10
+	// minimum: 1
+	// maximum: 100
+	Limit int `json:"limit" example:"10" minimum:"1" maximum:"100"`
+} //	@name	Accounts
+
+// AccountResponse represents a success response containing a single account.
+//
+// swagger:response AccountResponse
+//	@Description	Successful response containing a single account entity.
+type AccountResponse struct {
+	// in: body
+	Body Account
+}
+
+// AccountsResponse represents a success response containing a paginated list of accounts.
+//
+// swagger:response AccountsResponse
+//	@Description	Successful response containing a paginated list of accounts.
+type AccountsResponse struct {
+	// in: body
+	Body Accounts
+}
+
+// AccountErrorResponse represents an error response for account operations.
+//
+// swagger:response AccountErrorResponse
+//	@Description	Error response for account operations with error code and message.
+//
+//	@example		{
+//	  "code": 400001,
+//	  "message": "Invalid input: field 'assetCode' is required",
+//	  "details": {
+//	    "field": "assetCode",
+//	    "violation": "required"
+//	  }
+//	}
+type AccountErrorResponse struct {
+	// in: body
+	Body struct {
+		// Error code identifying the specific error
+		// example: 400001
+		Code int `json:"code"`
+
+		// Human-readable error message
+		// example: Invalid input: field 'assetCode' is required
+		Message string `json:"message"`
+
+		// Additional error details if available
+		// example: {"field": "assetCode", "violation": "required"}
+		Details map[string]any `json:"details,omitempty"`
 	}
-
-	if e.Status.Description != nil {
-		status.Description = *e.Status.Description
-	}
-
-	balance := proto.Balance{
-		Available: *e.Balance.Available,
-		OnHold:    *e.Balance.OnHold,
-		Scale:     *e.Balance.Scale,
-	}
-
-	account := &proto.Account{
-		Id:             e.ID,
-		Name:           e.Name,
-		AssetCode:      e.AssetCode,
-		OrganizationId: e.OrganizationID,
-		LedgerId:       e.LedgerID,
-		Balance:        &balance,
-		Status:         &status,
-		AllowSending:   *e.AllowSending,
-		AllowReceiving: *e.AllowReceiving,
-		Type:           e.Type,
-	}
-
-	if e.ParentAccountID != nil {
-		account.ParentAccountId = *e.ParentAccountID
-	}
-
-	if e.DeletedAt != nil {
-		account.DeletedAt = e.DeletedAt.String()
-	}
-
-	if !e.UpdatedAt.IsZero() {
-		account.UpdatedAt = e.UpdatedAt.String()
-	}
-
-	if !e.CreatedAt.IsZero() {
-		account.CreatedAt = e.CreatedAt.String()
-	}
-
-	if e.EntityID != nil {
-		account.EntityId = *e.EntityID
-	}
-
-	if e.PortfolioID != nil {
-		account.PortfolioId = *e.PortfolioID
-	}
-
-	if e.ProductID != nil {
-		account.ProductId = *e.ProductID
-	}
-
-	if e.Alias != nil {
-		account.Alias = *e.Alias
-	}
-
-	return account
 }

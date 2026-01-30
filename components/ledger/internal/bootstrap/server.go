@@ -1,52 +1,46 @@
 package bootstrap
 
 import (
-	"github.com/LerianStudio/midaz/pkg"
-	"github.com/LerianStudio/midaz/pkg/mlog"
-	"github.com/LerianStudio/midaz/pkg/mopentelemetry"
-
+	libCommons "github.com/LerianStudio/lib-commons/v2/commons"
+	libLog "github.com/LerianStudio/lib-commons/v2/commons/log"
+	libOpentelemetry "github.com/LerianStudio/lib-commons/v2/commons/opentelemetry"
+	libCommonsServer "github.com/LerianStudio/lib-commons/v2/commons/server"
 	"github.com/gofiber/fiber/v2"
-	"github.com/pkg/errors"
 )
 
-// Server represents the http server for Ledger service.
+// Server represents the HTTP server for Ledger metadata index services.
 type Server struct {
 	app           *fiber.App
 	serverAddress string
-	mlog.Logger
-	mopentelemetry.Telemetry
+	logger        libLog.Logger
+	telemetry     libOpentelemetry.Telemetry
 }
 
-// ServerAddress returns is a convenience method to return the server address.
+// ServerAddress returns the server address.
 func (s *Server) ServerAddress() string {
 	return s.serverAddress
 }
 
 // NewServer creates an instance of Server.
-func NewServer(cfg *Config, app *fiber.App, logger mlog.Logger, telemetry *mopentelemetry.Telemetry) *Server {
+func NewServer(cfg *Config, app *fiber.App, logger libLog.Logger, telemetry *libOpentelemetry.Telemetry) *Server {
+	serverAddress := cfg.ServerAddress
+	if serverAddress == "" {
+		serverAddress = ":3002"
+	}
+
 	return &Server{
 		app:           app,
-		serverAddress: cfg.ServerAddress,
-		Logger:        logger,
-		Telemetry:     *telemetry,
+		serverAddress: serverAddress,
+		logger:        logger,
+		telemetry:     *telemetry,
 	}
 }
 
 // Run runs the server.
-func (s *Server) Run(l *pkg.Launcher) error {
-	s.InitializeTelemetry(s.Logger)
-	defer s.ShutdownTelemetry()
-
-	defer func() {
-		if err := s.Logger.Sync(); err != nil {
-			s.Logger.Fatalf("Failed to sync logger: %s", err)
-		}
-	}()
-
-	err := s.app.Listen(s.ServerAddress())
-	if err != nil {
-		return errors.Wrap(err, "failed to run the server")
-	}
+func (s *Server) Run(l *libCommons.Launcher) error {
+	libCommonsServer.NewServerManager(nil, &s.telemetry, s.logger).
+		WithHTTPServer(s.app, s.serverAddress).
+		StartWithGracefulShutdown()
 
 	return nil
 }

@@ -7,86 +7,135 @@ Welcome to the comprehensive guide on the structure of our project, which is des
 The project is structured into several key directories, each serving specific roles:
 
 ```
-├── common
-│   ├── console
-│   ├── mlog
-│   ├── mmongo
-│   ├── mpointers
-│   ├── mpostgres
-│   ├── mzap
-│   ├── net
-│   │   └── http
-│   └── shell
-├── components
-│   ├── auth
-│   ├── ledger
-│   │   ├── api
-│   │   ├── internal
-│   │   │   ├── adapters
-│   │   │   │   └── database
-│   │   │   │       ├── mongodb
-│   │   │   │       └── postgres
-│   │   │   ├── app
-│   │   │   │   ├── command
-│   │   │   │   └── query
-│   │   │   ├── domain
-│   │   │   │   ├── metadata
-│   │   │   │   ├── onboarding
-│   │   │   │   │   ├── ledger
-│   │   │   │   │   └── organization
-│   │   │   │   └── portfolio
-│   │   │   │       ├── account
-│   │   │   │       ├── asset
-│   │   │   │       ├── portfolio
-│   │   │   │       └── product
-│   │   │   ├── gen
-│   │   │   │   └── mock
-│   │   │   │       ├── account
-│   │   │   │       ├── asset
-│   │   │   │       ├── ledger
-│   │   │   │       ├── metadata
-│   │   │   │       ├── organization
-│   │   │   │       ├── portfolio
-│   │   │   │       └── product
-│   │   │   ├── ports
-│   │   │   │   └── http
-│   │   │   └── service
-│   │   ├── migrations
-│   │   └── setup
-│   └── mdz
-│       ├── cmd
-│       │   ├── login
-│       │   ├── ui
-│       │   └── version
-│       └── pkg
-├── config
-│   ├── auth
-│   └── identity-schemas
-├── image
-│   └── README
-└── postman
-
+MIDAZ
+ |   bin
+ |   components
+ |   |---   crm
+ |   |   |---   api
+ |   |   |---   cmd
+ |   |   |---   internal
+ |   |   |   |---   adapters
+ |   |   |   |   |---   http
+ |   |   |   |   |   |---   in
+ |   |   |   |   |---   mongodb
+ |   |   |   |---   services
+ |   |   |---   scripts
+ |   |---   infra
+ |   |   |---   artifacts
+ |   |   |---   grafana
+ |   |   |---   postgres
+ |   |   |---   rabbitmq
+ |   |   |   |---   etc
+ |   |---   ledger
+ |   |   |---   api
+ |   |   |---   artifacts
+ |   |   |---   cmd
+ |   |   |   |---   app
+ |   |   |---   internal
+ |   |   |   |---   adapters
+ |   |   |   |   |---   http
+ |   |   |   |   |   |---   in
+ |   |   |   |---   bootstrap
+ |   |   |---   scripts
+ |   |---   onboarding
+ |   |   |---   api
+ |   |   |---   artifacts
+ |   |   |---   cmd
+ |   |   |   |---   app
+ |   |   |---   internal
+ |   |   |   |---   adapters
+ |   |   |   |   |---   http
+ |   |   |   |   |   |---   in
+ |   |   |   |   |   |---   out
+ |   |   |   |   |---   mongodb
+ |   |   |   |   |---   postgres
+ |   |   |   |   |   |---   account
+ |   |   |   |   |   |---   asset
+ |   |   |   |   |   |---   ledger
+ |   |   |   |   |   |---   organization
+ |   |   |   |   |   |---   portfolio
+ |   |   |   |   |   |---   segment
+ |   |   |   |   |---   rabbitmq
+ |   |   |   |   |---   redis
+ |   |   |   |---   bootstrap
+ |   |   |   |---   services
+ |   |   |   |   |---   command
+ |   |   |   |   |---   query
+ |   |   |---   migrations
+ |   |---   transaction
+ |   |   |---   api
+ |   |   |---   artifacts
+ |   |   |---   cmd
+ |   |   |   |---   app
+ |   |   |---   internal
+ |   |   |   |---   adapters
+ |   |   |   |   |---   http
+ |   |   |   |   |   |---   in
+ |   |   |   |   |   |---   out
+ |   |   |   |   |---   mongodb
+ |   |   |   |   |---   postgres
+ |   |   |   |   |   |---   assetrate
+ |   |   |   |   |   |---   balance
+ |   |   |   |   |   |---   operation
+ |   |   |   |   |   |---   transaction
+ |   |   |   |   |---   rabbitmq
+ |   |   |   |   |---   redis
+ |   |   |   |---   bootstrap
+ |   |   |   |---   services
+ |   |   |   |   |---   command
+ |   |   |   |   |---   query
+ |   |   |---   migrations
+ |   image
+ |   |---   README
+ |   pkg
+ |   |---   constant
+ |   |---   gold
+ |   |   |---   parser
+ |   |   |---   transaction
+ |   |---   mmodel
+ |   |---   mgrpc
+ |   |---   net
+ |   |   |---   http
+ |   |---   shell
+ |   |---   transaction
+ |   postman
+ |   scripts
+ |   tests
 ```
 
-#### Common Utilities (`./common`)
+#### Common Utilities (`./pkg`)
 
-* `console`: Description of the console utilities and their usage.
-* `mlog`: Overview of the logging framework and configuration details.
-* `mmongo`, `mpostgres`: Database utilities, including setup and configuration.
-* `mpointers`: Explanation of any custom pointer utilities or enhancements used in the project.
-* `mzap`: Details on the structured logger adapted for high-performance scenarios.
-* `net/http`: Information on HTTP helpers and network communication utilities.
+* `libLog`: Overview of the logging framework and configuration details.
+* `libMongo`, `mpostgres`: Database utilities, including setup and configuration.
+* `libPointers`: Explanation of any custom pointer utilities or enhancements used in the project.
+* `libZap`: Details on the structured logger adapted for high-performance scenarios.
+* `libHTTP`: Information on HTTP helpers and network communication utilities.
 * `shell`: Guide on shell utilities, including scripting and automation tools.
+* `transaction`: Contains details of transaction models and validations
 
 #### Components (`./components`)
 
-##### Ledger (`./components/ledger`)
+##### CRM (`./components/crm`)
 
-###### API (`./ledger/api`)
+###### API (`./components/crm/api`)
+
+* **Endpoints**: List and describe all CRM API endpoints, including parameters, request/response formats, and error codes.
+
+###### Internal (`./components/crm/internal`)
+
+* **Adapters** (`./components/crm/internal/adapters`):
+  * **HTTP**: Inbound HTTP handlers for CRM operations.
+  * **MongoDB**: Database connection and operations for CRM data persistence.
+* **Services** (`./components/crm/internal/services`):
+  * Business logic services for customer relationship management operations.
+
+##### Ledger (`./components/onboarding`)
+
+###### API (`./onboarding/api`)
 
 * **Endpoints** : List and describe all API endpoints, including parameters, request/response formats, and error codes.
 
-###### Internal (`./ledger/internal`)
+###### Internal (`./onboarding/internal`)
 
 * **Adapters** (`./adapters`):
   * **Database** : Connection and operation guides for MongoDB and PostgreSQL.
@@ -97,11 +146,6 @@ The project is structured into several key directories, each serving specific ro
   * Description of domain models such as Onboarding, Portfolio, Transaction, etc., and their relationships.
 * **Services** (`./service`):
   * Detailed information on business logic services, their roles, and interactions in the application.
-
-##### MDZ (`./components/mdz`)
-
-* **Command Line Tools** (`./cmd`): Guides on how to use various command-line tools included in the MDZ component.
-* **Packages** (`./pkg`): Information on additional packages provided within the MDZ component.
 
 ### Configuration (`./config`)
 

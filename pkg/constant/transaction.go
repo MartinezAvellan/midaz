@@ -1,10 +1,10 @@
 package constant
 
 const (
-	CREATED     = "CREATED"
-	APPROVED    = "APPROVED"
-	PREAPPROVED = "PRE_APPROVED"
-	SENT        = "SENT"
-	CANCELED    = "CANCELED"
-	DECLINED    = "DECLINED"
+	CREATED             = "CREATED"
+	APPROVED            = "APPROVED"
+	PENDING             = "PENDING"
+	CANCELED            = "CANCELED"
+	NOTED               = "NOTED"
+	UniqueViolationCode = "23505"
 )

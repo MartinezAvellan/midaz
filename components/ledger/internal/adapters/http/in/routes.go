@@ -1,93 +1,68 @@
 package in
 
 import (
-	_ "github.com/LerianStudio/midaz/components/ledger/api"
-	"github.com/LerianStudio/midaz/pkg/mcasdoor"
-	"github.com/LerianStudio/midaz/pkg/mlog"
-	"github.com/LerianStudio/midaz/pkg/mmodel"
-	"github.com/LerianStudio/midaz/pkg/mopentelemetry"
-	"github.com/LerianStudio/midaz/pkg/net/http"
-
+	"github.com/LerianStudio/lib-auth/v2/auth/middleware"
+	libLog "github.com/LerianStudio/lib-commons/v2/commons/log"
+	libHTTP "github.com/LerianStudio/lib-commons/v2/commons/net/http"
+	libOpentelemetry "github.com/LerianStudio/lib-commons/v2/commons/opentelemetry"
+	"github.com/LerianStudio/midaz/v3/pkg/mmodel"
+	"github.com/LerianStudio/midaz/v3/pkg/net/http"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/swaggo/fiber-swagger"
 )
 
-// NewRouter registerNewRouters routes to the Server.
-func NewRouter(lg mlog.Logger, tl *mopentelemetry.Telemetry, cc *mcasdoor.CasdoorConnection, ah *AccountHandler, ph *PortfolioHandler, lh *LedgerHandler, ih *AssetHandler, oh *OrganizationHandler, rh *ProductHandler) *fiber.App {
+const midazName = "midaz"
+
+// NewRouter registers routes for the ledger component HTTP server.
+func NewRouter(lg libLog.Logger, tl *libOpentelemetry.Telemetry, auth *middleware.AuthClient, mdi *MetadataIndexHandler) *fiber.App {
 	f := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			return libHTTP.HandleFiberError(ctx, err)
+		},
 	})
-	tlMid := http.NewTelemetryMiddleware(tl)
+
+	tlMid := libHTTP.NewTelemetryMiddleware(tl)
 
 	f.Use(tlMid.WithTelemetry(tl))
 	f.Use(cors.New())
-	f.Use(http.WithCorrelationID())
-	f.Use(http.WithHTTPLogging(http.WithCustomLogger(lg)))
-	jwt := http.NewJWTMiddleware(cc)
+	f.Use(libHTTP.WithHTTPLogging(libHTTP.WithCustomLogger(lg)))
 
-	// Organizations
-	f.Post("/v1/organizations", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("organization"), http.WithBody(new(mmodel.CreateOrganizationInput), oh.CreateOrganization))
-	f.Patch("/v1/organizations/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("organization"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.UpdateOrganizationInput), oh.UpdateOrganization))
-	f.Get("/v1/organizations", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("organization"), oh.GetAllOrganizations)
-	f.Get("/v1/organizations/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("organization"), http.ParseUUIDPathParameters, oh.GetOrganizationByID)
-	f.Delete("/v1/organizations/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("organization"), http.ParseUUIDPathParameters, oh.DeleteOrganizationByID)
-
-	// Ledgers
-	f.Post("/v1/organizations/:organization_id/ledgers", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("ledger"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.CreateLedgerInput), lh.CreateLedger))
-	f.Patch("/v1/organizations/:organization_id/ledgers/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("ledger"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.UpdateLedgerInput), lh.UpdateLedger))
-	f.Get("/v1/organizations/:organization_id/ledgers", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("ledger"), http.ParseUUIDPathParameters, lh.GetAllLedgers)
-	f.Get("/v1/organizations/:organization_id/ledgers/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("ledger"), http.ParseUUIDPathParameters, lh.GetLedgerByID)
-	f.Delete("/v1/organizations/:organization_id/ledgers/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("ledger"), http.ParseUUIDPathParameters, lh.DeleteLedgerByID)
-
-	// Assets
-	f.Post("/v1/organizations/:organization_id/ledgers/:ledger_id/assets", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("asset"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.CreateAssetInput), ih.CreateAsset))
-	f.Patch("/v1/organizations/:organization_id/ledgers/:ledger_id/assets/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("asset"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.UpdateAssetInput), ih.UpdateAsset))
-	f.Get("/v1/organizations/:organization_id/ledgers/:ledger_id/assets", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("asset"), http.ParseUUIDPathParameters, ih.GetAllAssets)
-	f.Get("/v1/organizations/:organization_id/ledgers/:ledger_id/assets/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("asset"), http.ParseUUIDPathParameters, ih.GetAssetByID)
-	f.Delete("/v1/organizations/:organization_id/ledgers/:ledger_id/assets/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("asset"), http.ParseUUIDPathParameters, ih.DeleteAssetByID)
-
-	// Portfolios
-	f.Post("/v1/organizations/:organization_id/ledgers/:ledger_id/portfolios", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("portfolio"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.CreatePortfolioInput), ph.CreatePortfolio))
-	f.Patch("/v1/organizations/:organization_id/ledgers/:ledger_id/portfolios/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("portfolio"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.UpdatePortfolioInput), ph.UpdatePortfolio))
-	f.Get("/v1/organizations/:organization_id/ledgers/:ledger_id/portfolios", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("portfolio"), http.ParseUUIDPathParameters, ph.GetAllPortfolios)
-	f.Get("/v1/organizations/:organization_id/ledgers/:ledger_id/portfolios/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("portfolio"), http.ParseUUIDPathParameters, ph.GetPortfolioByID)
-	f.Delete("/v1/organizations/:organization_id/ledgers/:ledger_id/portfolios/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("portfolio"), http.ParseUUIDPathParameters, ph.DeletePortfolioByID)
-
-	// Product
-	f.Post("/v1/organizations/:organization_id/ledgers/:ledger_id/products", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("product"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.CreateProductInput), rh.CreateProduct))
-	f.Patch("/v1/organizations/:organization_id/ledgers/:ledger_id/products/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("product"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.UpdateProductInput), rh.UpdateProduct))
-	f.Get("/v1/organizations/:organization_id/ledgers/:ledger_id/products", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("product"), http.ParseUUIDPathParameters, rh.GetAllProducts)
-	f.Get("/v1/organizations/:organization_id/ledgers/:ledger_id/products/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("product"), http.ParseUUIDPathParameters, rh.GetProductByID)
-	f.Delete("/v1/organizations/:organization_id/ledgers/:ledger_id/products/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("product"), http.ParseUUIDPathParameters, rh.DeleteProductByID)
-
-	// Accounts
-	f.Post("/v1/organizations/:organization_id/ledgers/:ledger_id/accounts", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("account"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.CreateAccountInput), ah.CreateAccount))
-	f.Patch("/v1/organizations/:organization_id/ledgers/:ledger_id/accounts/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("account"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.UpdateAccountInput), ah.UpdateAccount))
-	f.Get("/v1/organizations/:organization_id/ledgers/:ledger_id/accounts", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("account"), http.ParseUUIDPathParameters, ah.GetAllAccounts)
-	f.Get("/v1/organizations/:organization_id/ledgers/:ledger_id/accounts/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("account"), http.ParseUUIDPathParameters, ah.GetAccountByID)
-	f.Delete("/v1/organizations/:organization_id/ledgers/:ledger_id/accounts/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("account"), http.ParseUUIDPathParameters, ah.DeleteAccountByID)
-	// Will be deprecated in the future. Use "POST /v1/organizations/:organization_id/ledgers/:ledger_id/accounts" instead.
-	f.Post("/v1/organizations/:organization_id/ledgers/:ledger_id/portfolios/:portfolio_id/accounts", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("account"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.CreateAccountInput), ah.CreateAccountFromPortfolio))
-	// Will be deprecated in the future. Use "PATCH /v1/organizations/:organization_id/ledgers/:ledger_id/accounts/:id" instead.
-	f.Patch("/v1/organizations/:organization_id/ledgers/:ledger_id/portfolios/:portfolio_id/accounts/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("account"), http.ParseUUIDPathParameters, http.WithBody(new(mmodel.UpdateAccountInput), ah.UpdateAccountFromPortfolio))
-	// Will be deprecated in the future. Use "GET /v1/organizations/:organization_id/ledgers/:ledger_id/accounts" instead.
-	f.Get("/v1/organizations/:organization_id/ledgers/:ledger_id/portfolios/:portfolio_id/accounts", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("account"), http.ParseUUIDPathParameters, ah.GetAllAccountsByIDFromPortfolio)
-	// Will be deprecated in the future. Use "GET /v1/organizations/:organization_id/ledgers/:ledger_id/accounts/:id" instead.
-	f.Get("/v1/organizations/:organization_id/ledgers/:ledger_id/portfolios/:portfolio_id/accounts/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("account"), http.ParseUUIDPathParameters, ah.GetAccountByIDFromPortfolio)
-	// Will be deprecated in the future. Use "DELETE /v1/organizations/:organization_id/ledgers/:ledger_id/accounts/:id" instead.
-	f.Delete("/v1/organizations/:organization_id/ledgers/:ledger_id/portfolios/:portfolio_id/accounts/:id", jwt.ProtectHTTP(), jwt.WithPermissionHTTP("account"), http.ParseUUIDPathParameters, ah.DeleteAccountByIDFromPortfolio)
+	// Register metadata index routes
+	RegisterRoutesToApp(f, auth, mdi)
 
 	// Health
-	f.Get("/health", http.Ping)
+	f.Get("/health", libHTTP.Ping)
 
 	// Version
-	f.Get("/version", http.Version)
-
-	// Doc
-	f.Get("/swagger/*", WithSwaggerEnvConfig(), fiberSwagger.WrapHandler)
+	f.Get("/version", libHTTP.Version)
 
 	f.Use(tlMid.EndTracingSpans)
 
 	return f
+}
+
+// RegisterRoutesToApp registers ledger routes (metadata indexes) to an existing Fiber app.
+// This is used by the unified ledger server to consolidate all routes in a single port.
+func RegisterRoutesToApp(f *fiber.App, auth *middleware.AuthClient, mdi *MetadataIndexHandler) {
+	// Metadata Indexes
+	f.Post("/v1/settings/metadata-indexes/entities/:entity_name",
+		auth.Authorize(midazName, "settings", "post"),
+		http.WithBody(new(mmodel.CreateMetadataIndexInput), mdi.CreateMetadataIndex))
+
+	f.Get("/v1/settings/metadata-indexes",
+		auth.Authorize(midazName, "settings", "get"),
+		mdi.GetAllMetadataIndexes)
+
+	f.Delete("/v1/settings/metadata-indexes/entities/:entity_name/key/:index_key",
+		auth.Authorize(midazName, "settings", "delete"),
+		mdi.DeleteMetadataIndex)
+}
+
+// CreateRouteRegistrar returns a function that registers ledger routes to an existing Fiber app.
+// This is used by the unified ledger server to consolidate all routes in a single port.
+func CreateRouteRegistrar(auth *middleware.AuthClient, mdi *MetadataIndexHandler) func(*fiber.App) {
+	return func(fiberApp *fiber.App) {
+		RegisterRoutesToApp(fiberApp, auth, mdi)
+	}
 }

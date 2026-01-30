@@ -1,21 +1,41 @@
 package main
 
 import (
-	"github.com/LerianStudio/midaz/components/transaction/internal/bootstrap"
-	"github.com/LerianStudio/midaz/pkg"
+	"os"
+
+	libCommons "github.com/LerianStudio/lib-commons/v2/commons"
+	libZap "github.com/LerianStudio/lib-commons/v2/commons/zap"
+	"github.com/LerianStudio/midaz/v3/components/transaction/internal/bootstrap"
 )
 
-// @title			Midaz Transaction API
-// @version		1.0
-// @description	This is a swagger documentation for the Midaz Transaction API
-// @termsOfService	http://swagger.io/terms/
-// @contact.name	Discord community
-// @contact.url	https://discord.gg/DnhqKwkGv3
-// @license.name	Apache 2.0
-// @license.url	http://www.apache.org/licenses/LICENSE-2.0.html
-// @host			localhost:3002
-// @BasePath		/
+// @title						Midaz Transaction API
+// @version					v1.48.0
+// @description				This is a swagger documentation for the Midaz Transaction API
+// @termsOfService				http://swagger.io/terms/
+// @contact.name				Discord community
+// @contact.url				https://discord.gg/DnhqKwkGv3
+// @license.name				Apache 2.0
+// @license.url				http://www.apache.org/licenses/LICENSE-2.0.html
+// @host						localhost:3001
+// @BasePath					/
+// @securityDefinitions.apikey	BearerAuth
+// @in							header
+// @name						Authorization
+// @description				Bearer token authentication. Format: 'Bearer {access_token}'. Only required when auth plugin is enabled.
 func main() {
-	pkg.InitLocalEnvConfig()
-	bootstrap.InitServers().Run()
+	libCommons.InitLocalEnvConfig()
+
+	logger := libZap.InitializeLogger()
+
+	service, err := bootstrap.InitServersWithOptions(&bootstrap.Options{
+		Logger: logger,
+	})
+	if err != nil {
+		logger.Errorf("Failed to initialize transaction service: %v", err)
+		_ = logger.Sync()
+
+		os.Exit(1)
+	}
+
+	service.Run()
 }

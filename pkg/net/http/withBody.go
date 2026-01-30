@@ -7,16 +7,19 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/LerianStudio/midaz/pkg"
-	cn "github.com/LerianStudio/midaz/pkg/constant"
-	gold "github.com/LerianStudio/midaz/pkg/gold/transaction/model"
-
+	libCommons "github.com/LerianStudio/lib-commons/v2/commons"
+	libOpentelemetry "github.com/LerianStudio/lib-commons/v2/commons/opentelemetry"
+	"github.com/LerianStudio/midaz/v3/pkg"
+	cn "github.com/LerianStudio/midaz/v3/pkg/constant"
+	pkgTransaction "github.com/LerianStudio/midaz/v3/pkg/transaction"
 	"github.com/go-playground/locales/en"
 	ut "github.com/go-playground/universal-translator"
 	en2 "github.com/go-playground/validator/translations/en"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"gopkg.in/go-playground/validator.v9"
 )
 
@@ -59,25 +62,25 @@ func (d *decoderHandler) FiberHandlerFunc(c *fiber.Ctx) error {
 	bodyBytes := c.Body() // Get the body bytes
 
 	if err := json.Unmarshal(bodyBytes, s); err != nil {
-		return err
+		return BadRequest(c, pkg.ValidateUnmarshallingError(err))
 	}
 
 	marshaled, err := json.Marshal(s)
 	if err != nil {
-		return err
+		return BadRequest(c, pkg.ValidateUnmarshallingError(err))
 	}
 
 	var originalMap, marshaledMap map[string]any
 
 	if err := json.Unmarshal(bodyBytes, &originalMap); err != nil {
-		return err
+		return BadRequest(c, pkg.ValidateUnmarshallingError(err))
 	}
 
 	if err := json.Unmarshal(marshaled, &marshaledMap); err != nil {
-		return err
+		return BadRequest(c, pkg.ValidateUnmarshallingError(err))
 	}
 
-	diffFields := findUnknownFields(originalMap, marshaledMap)
+	diffFields := FindUnknownFields(originalMap, marshaledMap)
 
 	if len(diffFields) > 0 {
 		err := pkg.ValidateBadRequestFieldsError(pkg.FieldValidations{}, pkg.FieldValidations{}, "", diffFields)
@@ -89,6 +92,7 @@ func (d *decoderHandler) FiberHandlerFunc(c *fiber.Ctx) error {
 	}
 
 	c.Locals("fields", diffFields)
+	c.Locals("patchRemove", findNilFields(originalMap, ""))
 
 	parseMetadata(s, originalMap)
 
@@ -153,6 +157,12 @@ func ValidateStruct(s any) error {
 				return pkg.ValidateBusinessError(cn.ErrInvalidMetadataNesting, "", fieldError.Translate(trans))
 			case "singletransactiontype":
 				return pkg.ValidateBusinessError(cn.ErrInvalidTransactionType, "", fieldError.Translate(trans))
+			case "invalidstrings":
+				return pkg.ValidateBusinessError(cn.ErrInvalidAccountType, "", fieldError.Translate(trans), fieldError.Param())
+			case "invalidaliascharacters":
+				return pkg.ValidateBusinessError(cn.ErrAccountAliasInvalid, "", fieldError.Translate(trans), fieldError.Param())
+			case "invalidaccounttype":
+				return pkg.ValidateBusinessError(cn.ErrInvalidAccountTypeKeyValue, "", fieldError.Translate(trans))
 			}
 		}
 
@@ -161,31 +171,38 @@ func ValidateStruct(s any) error {
 		return &errPtr
 	}
 
+	// Generic null-byte validation across all string fields in the payload
+	if violations := validateNoNullBytes(s); len(violations) > 0 {
+		return pkg.ValidateBadRequestFieldsError(pkg.FieldValidations{}, violations, "", map[string]any{})
+	}
+
 	return nil
 }
 
-// ParseUUIDPathParameters globally, considering all path parameters are UUIDs
-func ParseUUIDPathParameters(c *fiber.Ctx) error {
-	params := c.AllParams()
+// ParseUUIDPathParameters globally, considering all path parameters are UUIDs and adding them to the span attributes
+// entityName is a snake_case string used to identify id name, for example the "organization" entity name will result in "app.request.organization_id"
+// otherwise the path parameter "id" in a request for example "/v1/organizations/:id" will be parsed as "app.request.id"
+func ParseUUIDPathParameters(entityName string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		for param, value := range c.AllParams() {
+			if !libCommons.Contains[string](cn.UUIDPathParameters, param) {
+				c.Locals(param, value)
+				continue
+			}
 
-	var invalidUUIDs []string
+			libOpentelemetry.SetSpanAttributeForParam(c, param, value, entityName)
 
-	for param, value := range params {
-		parsedUUID, err := uuid.Parse(value)
-		if err != nil {
-			invalidUUIDs = append(invalidUUIDs, param)
-			continue
+			parsedUUID, err := uuid.Parse(value)
+			if err != nil {
+				err := pkg.ValidateBusinessError(cn.ErrInvalidPathParameter, "", param)
+				return WithError(c, err)
+			}
+
+			c.Locals(param, parsedUUID)
 		}
 
-		c.Locals(param, parsedUUID)
+		return c.Next()
 	}
-
-	if len(invalidUUIDs) > 0 {
-		err := pkg.ValidateBusinessError(cn.ErrInvalidPathParameter, "", strings.Join(invalidUUIDs, ", "))
-		return WithError(c, err)
-	}
-
-	return c.Next()
 }
 
 //nolint:ireturn
@@ -214,6 +231,12 @@ func newValidator() (*validator.Validate, ut.Translator) {
 	_ = v.RegisterValidation("nonested", validateMetadataNestedValues)
 	_ = v.RegisterValidation("valuemax", validateMetadataValueMaxLength)
 	_ = v.RegisterValidation("singletransactiontype", validateSingleTransactionType)
+	_ = v.RegisterValidation("prohibitedexternalaccountprefix", validateProhibitedExternalAccountPrefix)
+	_ = v.RegisterValidation("invalidstrings", validateInvalidStrings)
+	_ = v.RegisterValidation("invalidaliascharacters", validateInvalidAliasCharacters)
+	_ = v.RegisterValidation("invalidaccounttype", validateAccountType)
+	_ = v.RegisterValidation("nowhitespaces", validateNoWhitespaces)
+	_ = v.RegisterValidation("metadatakeyformat", validateMetadataKeyFormat)
 
 	_ = v.RegisterTranslation("required", trans, func(ut ut.Translator) error {
 		return ut.Add("required", "{0} is a required field", true)
@@ -267,6 +290,54 @@ func newValidator() (*validator.Validate, ut.Translator) {
 		return ut.Add("singletransactiontype", "{0}", true)
 	}, func(ut ut.Translator, fe validator.FieldError) string {
 		t, _ := ut.T("singletransactiontype", formatErrorFieldName(fe.Namespace()))
+
+		return t
+	})
+
+	_ = v.RegisterTranslation("prohibitedexternalaccountprefix", trans, func(ut ut.Translator) error {
+		prefix := cn.DefaultExternalAccountAliasPrefix
+		return ut.Add("prohibitedexternalaccountprefix", "{0} cannot contain the text '"+prefix+"'", true)
+	}, func(ut ut.Translator, fe validator.FieldError) string {
+		t, _ := ut.T("prohibitedexternalaccountprefix", formatErrorFieldName(fe.Namespace()))
+
+		return t
+	})
+
+	_ = v.RegisterTranslation("invalidstrings", trans, func(ut ut.Translator) error {
+		return ut.Add("invalidstrings", "{0} cannot contain any of these invalid strings: {1}", true)
+	}, func(ut ut.Translator, fe validator.FieldError) string {
+		t, _ := ut.T("invalidstrings", formatErrorFieldName(fe.Namespace()), fe.Param())
+		return t
+	})
+
+	_ = v.RegisterTranslation("invalidaliascharacters", trans, func(ut ut.Translator) error {
+		return ut.Add("invalidaliascharacters", "{0}", true)
+	}, func(ut ut.Translator, fe validator.FieldError) string {
+		t, _ := ut.T("invalidaliascharacters", formatErrorFieldName(fe.Namespace()))
+
+		return t
+	})
+
+	_ = v.RegisterTranslation("invalidaccounttype", trans, func(ut ut.Translator) error {
+		return ut.Add("invalidaccounttype", "{0}", true)
+	}, func(ut ut.Translator, fe validator.FieldError) string {
+		t, _ := ut.T("invalidaccounttype", formatErrorFieldName(fe.Namespace()))
+
+		return t
+	})
+
+	_ = v.RegisterTranslation("nowhitespaces", trans, func(ut ut.Translator) error {
+		return ut.Add("nowhitespaces", "{0} cannot contain whitespaces", true)
+	}, func(ut ut.Translator, fe validator.FieldError) string {
+		t, _ := ut.T("nowhitespaces", formatErrorFieldName(fe.Namespace()))
+
+		return t
+	})
+
+	_ = v.RegisterTranslation("metadatakeyformat", trans, func(ut ut.Translator) error {
+		return ut.Add("metadatakeyformat", "{0} must start with a letter and contain only alphanumeric characters and underscores", true)
+	}, func(ut ut.Translator, fe validator.FieldError) string {
+		t, _ := ut.T("metadatakeyformat", formatErrorFieldName(fe.Namespace()))
 
 		return t
 	})
@@ -326,7 +397,7 @@ func validateMetadataValueMaxLength(fl validator.FieldLevel) bool {
 
 // validateSingleTransactionType checks if a transaction has only one type of transaction (amount, share, or remaining)
 func validateSingleTransactionType(fl validator.FieldLevel) bool {
-	arrField := fl.Field().Interface().([]gold.FromTo)
+	arrField := fl.Field().Interface().([]pkgTransaction.FromTo)
 	for _, f := range arrField {
 		count := 0
 		if f.Amount != nil {
@@ -344,6 +415,74 @@ func validateSingleTransactionType(fl validator.FieldLevel) bool {
 		if count != 1 {
 			return false
 		}
+	}
+
+	return true
+}
+
+// validateProhibitedExternalAccountPrefix
+func validateProhibitedExternalAccountPrefix(fl validator.FieldLevel) bool {
+	f := fl.Field().Interface().(string)
+
+	return !strings.Contains(f, cn.DefaultExternalAccountAliasPrefix)
+}
+
+// validateInvalidAliasCharacters validate if it has invalid characters on alias. only permit a-zA-Z0-9@:_-
+func validateInvalidAliasCharacters(fl validator.FieldLevel) bool {
+	f := fl.Field().Interface().(string)
+
+	var validChars = regexp.MustCompile(cn.AccountAliasAcceptedChars)
+
+	return validChars.MatchString(f)
+}
+
+// validateAccountType checks if the string contains only alphanumeric characters, _ or -, and no spaces.
+func validateAccountType(fl validator.FieldLevel) bool {
+	f, ok := fl.Field().Interface().(string)
+	if !ok {
+		return false
+	}
+
+	match, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, f)
+
+	return match
+}
+
+// validateNoWhitespaces ensures the provided string does not contain any whitespace characters. Return false if input is invalid.
+func validateNoWhitespaces(fl validator.FieldLevel) bool {
+	f, ok := fl.Field().Interface().(string)
+	if !ok {
+		return false
+	}
+
+	match, _ := regexp.MatchString(`^\S+$`, f)
+
+	return match
+}
+
+// validateMetadataKeyFormat validates the metadata key format for index creation.
+// Rules:
+// - Must start with a letter
+// - Only alphanumeric characters and underscores allowed
+// - No dots, $, or MongoDB reserved prefixes
+func validateMetadataKeyFormat(fl validator.FieldLevel) bool {
+	f, ok := fl.Field().Interface().(string)
+	if !ok {
+		return false
+	}
+
+	if len(f) == 0 {
+		return false
+	}
+
+	// Must start with a letter
+	if !regexp.MustCompile(`^[a-zA-Z]`).MatchString(f) {
+		return false
+	}
+
+	// Only alphanumeric and underscores allowed (no dots, $, or special chars)
+	if !regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*$`).MatchString(f) {
+		return false
 	}
 
 	return true
@@ -367,6 +506,7 @@ func malformedRequestErr(err validator.ValidationErrors, trans ut.Translator) pk
 	requiredFields := fieldsRequired(invalidFieldsMap)
 
 	var vErr pkg.ValidationKnownFieldsError
+
 	_ = errors.As(pkg.ValidateBadRequestFieldsError(requiredFields, invalidFieldsMap, "", make(map[string]any)), &vErr)
 
 	return vErr
@@ -398,6 +538,83 @@ func fieldsRequired(myMap pkg.FieldValidations) pkg.FieldValidations {
 	return result
 }
 
+// validateNoNullBytes walks through the struct payload and ensures no string value contains a null byte (\x00).
+// Returns a map of invalid field names to error messages when violations are found.
+func validateNoNullBytes(s any) pkg.FieldValidations {
+	out := make(pkg.FieldValidations)
+
+	rv := reflect.ValueOf(s)
+
+	collectNullByteViolations(rv, "", out)
+
+	if len(out) == 0 {
+		return nil
+	}
+
+	return out
+}
+
+// collectNullByteViolations recursively traverses values and records fields that contain null bytes.
+func collectNullByteViolations(rv reflect.Value, jsonPath string, out pkg.FieldValidations) {
+	if !rv.IsValid() {
+		return
+	}
+
+	switch rv.Kind() {
+	case reflect.Ptr:
+		if rv.IsNil() {
+			return
+		}
+
+		collectNullByteViolations(rv.Elem(), jsonPath, out)
+	case reflect.Struct:
+		rt := rv.Type()
+		for i := 0; i < rv.NumField(); i++ {
+			f := rt.Field(i)
+
+			// Skip unexported fields
+			if f.PkgPath != "" {
+				continue
+			}
+
+			name := jsonFieldName(f)
+			if name == "-" {
+				continue
+			}
+
+			collectNullByteViolations(rv.Field(i), name, out)
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < rv.Len(); i++ {
+			collectNullByteViolations(rv.Index(i), jsonPath, out)
+		}
+	case reflect.String:
+		if strings.ContainsRune(rv.String(), '\x00') {
+			key := jsonPath
+			if key == "" {
+				key = "value"
+			}
+
+			out[key] = key + " cannot contain null byte (\\x00)"
+		}
+	default:
+		// primitives: no-op
+	}
+}
+
+// jsonFieldName returns the effective JSON field name for a struct field.
+func jsonFieldName(f reflect.StructField) string {
+	tag := f.Tag.Get("json")
+
+	name := strings.Split(tag, ",")[0]
+
+	if name == "" {
+		return f.Name
+	}
+
+	return name
+}
+
 // parseMetadata For compliance with RFC7396 JSON Merge Patch
 func parseMetadata(s any, originalMap map[string]any) {
 	val := reflect.ValueOf(s)
@@ -417,11 +634,13 @@ func parseMetadata(s any, originalMap map[string]any) {
 	}
 }
 
-// findUnknownFields finds fields that are present in the original map but not in the marshaled map.
-func findUnknownFields(original, marshaled map[string]any) map[string]any {
+// FindUnknownFields finds fields that are present in the original map but not in the marshaled map.
+//
+//nolint:gocognit,gocyclo
+func FindUnknownFields(original, marshaled map[string]any) map[string]any {
 	diffFields := make(map[string]any)
 
-	numKinds := pkg.GetMapNumKinds()
+	numKinds := libCommons.GetMapNumKinds()
 
 	for key, value := range original {
 		if numKinds[reflect.ValueOf(value).Kind()] && value == 0.0 {
@@ -430,21 +649,18 @@ func findUnknownFields(original, marshaled map[string]any) map[string]any {
 
 		marshaledValue, ok := marshaled[key]
 		if !ok {
-			// If the key is not present in the marshaled map, marking as difference
 			diffFields[key] = value
 			continue
 		}
 
-		// Check for nested structures and direct value comparison
 		switch originalValue := value.(type) {
 		case map[string]any:
 			if marshaledMap, ok := marshaledValue.(map[string]any); ok {
-				nestedDiff := findUnknownFields(originalValue, marshaledMap)
+				nestedDiff := FindUnknownFields(originalValue, marshaledMap)
 				if len(nestedDiff) > 0 {
 					diffFields[key] = nestedDiff
 				}
 			} else if !reflect.DeepEqual(originalValue, marshaledValue) {
-				// If types mismatch (map vs non-map), marking as difference
 				diffFields[key] = value
 			}
 
@@ -455,12 +671,25 @@ func findUnknownFields(original, marshaled map[string]any) map[string]any {
 					diffFields[key] = arrayDiff
 				}
 			} else if !reflect.DeepEqual(originalValue, marshaledValue) {
-				// If types mismatch (slice vs non-slice), marking as difference
 				diffFields[key] = value
 			}
+		case string:
+			if isStringNumeric(originalValue) {
+				if isDecimalEqual(originalValue, marshaledValue) {
+					continue
+				}
+			}
 
+			if marshaledStr, ok := marshaledValue.(string); ok {
+				if areDatesEqual(originalValue, marshaledStr) {
+					continue
+				}
+			}
+
+			if !reflect.DeepEqual(value, marshaledValue) {
+				diffFields[key] = value
+			}
 		default:
-			// Using reflect.DeepEqual for simple types (strings, ints, etc.)
 			if !reflect.DeepEqual(value, marshaledValue) {
 				diffFields[key] = value
 			}
@@ -468,6 +697,84 @@ func findUnknownFields(original, marshaled map[string]any) map[string]any {
 	}
 
 	return diffFields
+}
+
+func isDecimalEqual(a, b any) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+
+	var decimalA, decimalB decimal.Decimal
+
+	var err error
+
+	switch valA := a.(type) {
+	case string:
+		decimalA, err = decimal.NewFromString(valA)
+		if err != nil {
+			return false
+		}
+	case decimal.Decimal:
+		decimalA = valA
+	default:
+		return false
+	}
+
+	switch valB := b.(type) {
+	case string:
+		decimalB, err = decimal.NewFromString(valB)
+		if err != nil {
+			return false
+		}
+	case decimal.Decimal:
+		decimalB = valB
+	default:
+		return false
+	}
+
+	return decimalA.Equal(decimalB)
+}
+
+func isStringNumeric(s string) bool {
+	_, err := decimal.NewFromString(s)
+	return err == nil
+}
+
+var dateFormats = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02T15:04:05.000Z",
+	"2006-01-02T15:04:05.00Z",
+	"2006-01-02T15:04:05.0Z",
+	"2006-01-02T15:04:05Z",
+	"2006-01-02T15:04:05",
+	"2006-01-02",
+}
+
+func areDatesEqual(a, b string) bool {
+	var timeA, timeB time.Time
+
+	var errA, errB error
+
+	for _, format := range dateFormats {
+		if timeA.IsZero() {
+			timeA, errA = time.Parse(format, a)
+		}
+
+		if timeB.IsZero() {
+			timeB, errB = time.Parse(format, b)
+		}
+
+		if !timeA.IsZero() && !timeB.IsZero() {
+			break
+		}
+	}
+
+	if errA != nil || errB != nil || timeA.IsZero() || timeB.IsZero() {
+		return false
+	}
+
+	return timeA.Equal(timeB)
 }
 
 // compareSlices compares two slices and returns differences.
@@ -480,15 +787,16 @@ func compareSlices(original, marshaled []any) []any {
 			// If marshaled slice is shorter, the original item is missing
 			diff = append(diff, item)
 		} else {
+			tmpMarshaled := marshaled[i]
 			// Compare individual items at the same index
 			if originalMap, ok := item.(map[string]any); ok {
-				if marshaledMap, ok := marshaled[i].(map[string]any); ok {
-					nestedDiff := findUnknownFields(originalMap, marshaledMap)
+				if marshaledMap, ok := tmpMarshaled.(map[string]any); ok {
+					nestedDiff := FindUnknownFields(originalMap, marshaledMap)
 					if len(nestedDiff) > 0 {
 						diff = append(diff, nestedDiff)
 					}
 				}
-			} else if !reflect.DeepEqual(item, marshaled[i]) {
+			} else if !reflect.DeepEqual(item, tmpMarshaled) {
 				diff = append(diff, item)
 			}
 		}
@@ -500,4 +808,45 @@ func compareSlices(original, marshaled []any) []any {
 	}
 
 	return diff
+}
+
+// validateInvalidStrings checks if a string contains any of the invalid strings (case-insensitive)
+func validateInvalidStrings(fl validator.FieldLevel) bool {
+	f := strings.ToLower(fl.Field().Interface().(string))
+
+	invalidStrings := strings.Split(fl.Param(), ",")
+
+	for _, str := range invalidStrings {
+		if strings.Contains(f, strings.ToLower(str)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// findNilFields recursively traverses the map and returns the paths
+// of the fields whose value is nil.
+// The prefix parameter is used to build the complete path (e.g., "object.field").
+func findNilFields(data map[string]any, prefix string) []string {
+	var nilFields []string
+
+	for key, value := range data {
+		var fullPath string
+		if prefix == "" {
+			fullPath = key
+		} else {
+			fullPath = prefix + "." + key
+		}
+
+		if value == nil {
+			nilFields = append(nilFields, fullPath)
+		} else {
+			if nestedMap, ok := value.(map[string]any); ok {
+				nilFields = append(nilFields, findNilFields(nestedMap, fullPath)...)
+			}
+		}
+	}
+
+	return nilFields
 }

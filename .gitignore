@@ -1,8 +1,43 @@
-.vscode
-*__debug_bin1675735721
-.DS_Store
-.env
-components/mdz/bin/mdz
-.idea
+# IDE and editor files
+.vscode/
+.idea/
 *.iml
+ide/
+tmp/
+CLAUDE.md
+.claude/
+.windsurf/
+.cursor/
+.run/onboarding.run.xml
+.run/transaction.run.xml
+
+# OS generated files
+.DS_Store
+
+# Build and binary files
+*__debug_bin1675735721
+dist/
+coverage.out
+scripts/coverage_ignore.txt
+reports/
+
+# Docker compose files
 components/ledger/_docker-compose.yml
+components/onboarding/_docker-compose.yml
+
+# Environment files
+.env
+
+# Dependencies
+node_modules/
+scripts/node_modules/
+scripts/demo-data/node_modules/
+scripts/demo-data/dist/
+scripts/demo-data/sdk-source/
+
+# Other
+postman/backups
+
+.windsurfrules
+cert/
+.mcp.json

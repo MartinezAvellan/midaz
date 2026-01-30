@@ -3,8 +3,9 @@ package http
 import (
 	"errors"
 
-	"github.com/LerianStudio/midaz/pkg"
-
+	libCommons "github.com/LerianStudio/lib-commons/v2/commons"
+	libConstants "github.com/LerianStudio/lib-commons/v2/commons/constants"
+	"github.com/LerianStudio/midaz/v3/pkg"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -32,13 +33,31 @@ func WithError(c *fiber.Ctx, err error) error {
 		return BadRequest(c, e)
 	case pkg.ResponseError:
 		var rErr pkg.ResponseError
+
 		_ = errors.As(err, &rErr)
 
 		return JSONResponseError(c, rErr)
-	default:
-		var iErr pkg.InternalServerError
-		_ = errors.As(pkg.ValidateInternalError(err, ""), &iErr)
+	case libCommons.Response:
+		switch e.Code {
+		case libConstants.ErrInsufficientFunds.Error(), libConstants.ErrAccountIneligibility.Error():
+			return UnprocessableEntity(c, e.Code, e.Title, e.Message)
+		case libConstants.ErrAssetCodeNotFound.Error():
+			return NotFound(c, e.Code, e.Title, e.Message)
+		case libConstants.ErrOverFlowInt64.Error():
+			return InternalServerError(c, e.Code, e.Title, e.Message)
+		default:
+			return BadRequest(c, pkg.ValidationKnownFieldsError{
+				Code:    e.Code,
+				Title:   e.Title,
+				Message: e.Message,
+			})
+		}
 
-		return InternalServerError(c, iErr.Code, iErr.Title, iErr.Message)
+	case pkg.InternalServerError:
+		return InternalServerError(c, e.Code, e.Title, e.Message)
+	case pkg.ServiceUnavailableError:
+		return ServiceUnavailable(c, e.Code, e.Title, e.Message)
+	default:
+		return pkg.ValidateInternalError(err, "")
 	}
 }

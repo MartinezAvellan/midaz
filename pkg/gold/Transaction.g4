@@ -12,7 +12,7 @@ WS: [ \t\r\n]+ -> skip;
 
 
 // Rules
-transaction: '(' ('transaction' | 'transaction-template') VERSION chartOfAccountsGroupName description? code? pending? metadata? send distribute ')';
+transaction: '(' ('transaction' | 'transaction-template') VERSION chartOfAccountsGroupName description? code? pending? metadata? send ')';
 
 chartOfAccountsGroupName: '(' 'chart-of-accounts-group-name' UUID ')';
 code: '(' 'code' UUID ')';
@@ -40,8 +40,7 @@ valueOrVariable: INT
                | VARIABLE
                ;
 
-sendTypes: ':amount' UUID valueOrVariable '|' valueOrVariable                # Amount
-         | ':share' valueOrVariable ':of' valueOrVariable ':desc whatever'   # ShareDescWhatever
+sendTypes: ':amount' UUID valueOrVariable '|' valueOrVariable               # Amount
          | ':share' valueOrVariable ':of' valueOrVariable                    # ShareIntOfInt
          | ':share' valueOrVariable                                          # ShareInt
          | REMAINING                                                         # Remaining
@@ -52,9 +51,13 @@ account: VARIABLE
        | UUID
        ;
 
-from: '(' 'from' account sendTypes description? chartOfAccounts? metadata? ')';
-send: '(' 'send' UUID valueOrVariable '|' valueOrVariable source ')';
+
+rate: '(' 'rate' UUID UUID '->' UUID valueOrVariable '|' valueOrVariable ')';
+
+from: '(' 'from' account sendTypes rate? description? chartOfAccounts? metadata? ')';
 source: '(' 'source' REMAINING? from+ ')';
 
-to: '(' 'to' account sendTypes description? chartOfAccounts? metadata? ')';
+to: '(' 'to' account sendTypes rate? description? chartOfAccounts? metadata? ')';
 distribute: '(' 'distribute' REMAINING? to+ ')';
+
+send: '(' 'send' UUID valueOrVariable '|' valueOrVariable source distribute ')';

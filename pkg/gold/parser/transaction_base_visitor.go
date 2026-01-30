@@ -60,10 +60,6 @@ func (v *BaseTransactionVisitor) VisitAmount(ctx *AmountContext) interface{} {
 	return v.VisitChildren(ctx)
 }
 
-func (v *BaseTransactionVisitor) VisitShareDescWhatever(ctx *ShareDescWhateverContext) interface{} {
-	return v.VisitChildren(ctx)
-}
-
 func (v *BaseTransactionVisitor) VisitShareIntOfInt(ctx *ShareIntOfIntContext) interface{} {
 	return v.VisitChildren(ctx)
 }
@@ -80,11 +76,11 @@ func (v *BaseTransactionVisitor) VisitAccount(ctx *AccountContext) interface{} {
 	return v.VisitChildren(ctx)
 }
 
-func (v *BaseTransactionVisitor) VisitFrom(ctx *FromContext) interface{} {
+func (v *BaseTransactionVisitor) VisitRate(ctx *RateContext) interface{} {
 	return v.VisitChildren(ctx)
 }
 
-func (v *BaseTransactionVisitor) VisitSend(ctx *SendContext) interface{} {
+func (v *BaseTransactionVisitor) VisitFrom(ctx *FromContext) interface{} {
 	return v.VisitChildren(ctx)
 }
 
@@ -97,5 +93,9 @@ func (v *BaseTransactionVisitor) VisitTo(ctx *ToContext) interface{} {
 }
 
 func (v *BaseTransactionVisitor) VisitDistribute(ctx *DistributeContext) interface{} {
+	return v.VisitChildren(ctx)
+}
+
+func (v *BaseTransactionVisitor) VisitSend(ctx *SendContext) interface{} {
 	return v.VisitChildren(ctx)
 }

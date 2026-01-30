@@ -1,11 +1,10 @@
 package http
 
 import (
-	"net/http"
-
-	"github.com/LerianStudio/midaz/pkg"
-
+	"github.com/LerianStudio/midaz/v3/pkg"
 	"github.com/gofiber/fiber/v2"
+	"net/http"
+	"strconv"
 )
 
 // Unauthorized sends an HTTP 401 Unauthorized response with a custom code, title and message.
@@ -41,7 +40,7 @@ func OK(c *fiber.Ctx, s any) error {
 	return c.Status(http.StatusOK).JSON(s)
 }
 
-// NoContent sends an HTTP 204 No Content response without any body.
+// NoContent sends an HTTP 204 No Content response without anybody.
 func NoContent(c *fiber.Ctx) error {
 	return c.SendStatus(http.StatusNoContent)
 }
@@ -106,9 +105,20 @@ func InternalServerError(c *fiber.Ctx, code, title, message string) error {
 	})
 }
 
+// ServiceUnavailable sends an HTTP 503 Service Unavailable response with a custom code, title and message.
+func ServiceUnavailable(c *fiber.Ctx, code, title, message string) error {
+	return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+		"code":    code,
+		"title":   title,
+		"message": message,
+	})
+}
+
 // JSONResponseError sends a JSON formatted error response with a custom error struct.
 func JSONResponseError(c *fiber.Ctx, err pkg.ResponseError) error {
-	return c.Status(err.Code).JSON(err)
+	code, _ := strconv.Atoi(err.Code)
+
+	return c.Status(code).JSON(err)
 }
 
 // JSONResponse sends a custom status code and body as a JSON response.

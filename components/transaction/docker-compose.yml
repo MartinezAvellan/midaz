@@ -12,21 +12,19 @@ services:
     volumes:
       - .:/usr/src/app
     networks:
-      - transaction_network
-      - auth_network
-      - infra_network
-      - ledger_network
+      - infra-network
+      - onboarding-network
+      - transaction-network
 
 networks:
-  transaction_network:
-    name: transaction_network
+  infra-network:
+    name: infra-network
     driver: bridge
-  ledger_network:
-    name: ledger_network
+    external: true
+  onboarding-network:
+    name: onboarding-network
     driver: bridge
-  auth_network:
-    name: auth_network
-    driver: bridge
-  infra_network:
-    name: infra_network
+    external: true
+  transaction-network:
+    name: transaction-network
     driver: bridge
